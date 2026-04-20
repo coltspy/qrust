@@ -243,3 +243,66 @@ mod tests {
         }
     }
 }
+
+#[cfg(target_arch = "wasm32")]
+mod wasm {
+    use super::{Op, State};
+    use serde::{Deserialize, Serialize};
+    use wasm_bindgen::prelude::*;
+
+    #[derive(Deserialize)]
+    #[serde(tag = "kind", rename_all = "lowercase")]
+    enum OpInput {
+        H { q: usize },
+        X { q: usize },
+        Y { q: usize },
+        Z { q: usize },
+        S { q: usize },
+        T { q: usize },
+        Cnot { control: usize, target: usize },
+    }
+
+    impl From<OpInput> for Op {
+        fn from(o: OpInput) -> Self {
+            match o {
+                OpInput::H { q } => Op::H(q),
+                OpInput::X { q } => Op::X(q),
+                OpInput::Y { q } => Op::Y(q),
+                OpInput::Z { q } => Op::Z(q),
+                OpInput::S { q } => Op::S(q),
+                OpInput::T { q } => Op::T(q),
+                OpInput::Cnot { control, target } => Op::Cnot { control, target },
+            }
+        }
+    }
+
+    #[derive(Deserialize)]
+    struct CircuitInput {
+        qubits: usize,
+        ops: Vec<OpInput>,
+    }
+
+    #[derive(Serialize)]
+    struct RunResult {
+        qubits: usize,
+        probabilities: Vec<f64>,
+        qubit_p_one: Vec<f64>,
+    }
+
+    #[wasm_bindgen]
+    pub fn run_circuit(input: JsValue) -> Result<JsValue, JsValue> {
+        let input: CircuitInput = serde_wasm_bindgen::from_value(input)?;
+        let mut s = State::zero(input.qubits);
+        for op in input.ops {
+            s.apply(op.into());
+        }
+        let qubit_p_one = (0..s.qubits).map(|q| s.qubit_prob_one(q)).collect();
+        let result = RunResult {
+            qubits: s.qubits,
+            probabilities: s.probabilities(),
+            qubit_p_one,
+        };
+        serde_wasm_bindgen::to_value(&result).map_err(Into::into)
+    }
+}
+
